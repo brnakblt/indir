@@ -1,0 +1,172 @@
+#!/bin/bash
+
+# Safe upgrade of yt-dlp tool
+if command -v uv >/dev/null 2>&1; then
+    echo "Checking for yt-dlp updates..."
+    uv tool upgrade yt-dlp || true
+fi
+
+# Check if yt-dlp is available in PATH
+if ! command -v yt-dlp &> /dev/null; then
+    echo "Error: yt-dlp not found! Please install it."
+    exit 1
+fi
+
+# Parse arguments to extract URL and custom user flags (like -k)
+URL=""
+USER_ARGS=()
+for arg in "$@"; do
+    if [[ "$arg" =~ ^https?:// ]] || [[ "$arg" =~ ^youtu\.be/ ]]; then
+        URL="$arg"
+    else
+        USER_ARGS+=("$arg")
+    fi
+done
+
+# Prompt for URL if not provided via arguments
+if [ -z "$URL" ]; then
+    read -p "URL to download: " URL
+fi
+
+if [ -z "$URL" ]; then
+    echo "Error: URL cannot be empty!"
+    exit 1
+fi
+
+# Ask if they want Music (m) or Video (v)
+read -p "Music or Video? [m/v]: " choice
+
+if [[ ! "$choice" =~ ^[mMyYvV]$ ]]; then
+    echo "Error: Invalid choice! Canceled."
+    exit 1
+fi
+
+# Set up target directory and extension based on format choice
+if [[ "$choice" =~ ^[mM]$ ]]; then
+    OUT_DIR="/home/baran/Music"
+    EXT="opus"
+else
+    OUT_DIR="/home/baran/Videos/Youtube"
+    EXT="mp4"
+fi
+mkdir -p "$OUT_DIR"
+
+# Hardcoded cookies file
+COOKIES="/home/baran/Documents/www.youtube.com_cookies.txt"
+if [ -f "$COOKIES" ]; then
+    echo "Cookies file loaded: www.youtube.com_cookies.txt"
+else
+    echo "Warning: Cookies file not found!"
+fi
+
+# Set up error log file
+LOG_FILE="/home/baran/.cache/ytdlp_download_error.log"
+mkdir -p "$(dirname "$LOG_FILE")"
+
+# Set up standard Chrome User Agent (updated to 125)
+USER_AGENT="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36"
+
+# Detect if the URL is a playlist
+IS_PLAYLIST=false
+if [[ "$URL" == *"list="* ]] || [[ "$URL" == *"playlist?"* ]]; then
+    IS_PLAYLIST=true
+fi
+
+# Build arguments array
+args=()
+if [ -f "$COOKIES" ]; then
+    args+=("--cookies" "$COOKIES")
+fi
+
+args+=(
+    "--sleep-interval" "10"
+    "--max-sleep-interval" "25"
+    "--limit-rate" "3M"
+    "--user-agent" "$USER_AGENT"
+    "--retries" "3"
+    "--fragment-retries" "5"
+    "--ignore-errors"
+    "--no-warnings"
+    "--progress"
+)
+
+# Append any custom user arguments (like -k) passed to the script
+args+=("${USER_ARGS[@]}")
+
+# Handle playlist-specific archive
+ARCHIVE_FILE=""
+if [ "$IS_PLAYLIST" = true ]; then
+    URL_HASH=$(printf "%s" "$URL" | md5sum | cut -d' ' -f1)
+    ARCHIVE_FILE="/home/baran/.cache/yt-dlp-archive-${URL_HASH}.txt"
+    mkdir -p "$(dirname "$ARCHIVE_FILE")"
+    args+=("--download-archive" "$ARCHIVE_FILE")
+    echo "Playlist detected. Download archive active: $ARCHIVE_FILE"
+else
+    echo "Single video/song detected. Download archive not used."
+fi
+
+# Set up output arguments (handling duplicate numbering for single files)
+out_opts=()
+if [ "$IS_PLAYLIST" = true ]; then
+    out_opts+=("-o" "$OUT_DIR/%(playlist_index)03d - %(title)s.%(ext)s")
+else
+    OUT_TEMPLATE="%(title)s.%(ext)s"
+    
+    # Fetch proposed file path from yt-dlp (runs quickly for a single video)
+    PROPOSED_FILE=$(yt-dlp "${args[@]}" --print filename -o "$OUT_DIR/$OUT_TEMPLATE" "$URL" 2>/dev/null | tail -n 1 | tr -d '\r')
+    if [ -z "$PROPOSED_FILE" ]; then
+        DIR="$OUT_DIR"
+        NAME="download"
+    else
+        DIR=$(dirname "$PROPOSED_FILE")
+        BASE=$(basename "$PROPOSED_FILE")
+        NAME="${BASE%.*}"
+    fi
+    
+    FINAL_FILE="$DIR/$NAME.$EXT"
+    COUNTER=1
+    while [ -f "$FINAL_FILE" ]; do
+        COUNTER=$((COUNTER + 1))
+        FINAL_FILE="$DIR/$NAME ($COUNTER).$EXT"
+    done
+    
+    if [ "$COUNTER" -eq 1 ]; then
+        out_opts+=("-o" "$DIR/$NAME.%(ext)s")
+    else
+        out_opts+=("-o" "$DIR/$NAME ($COUNTER).%(ext)s")
+        echo "File with the same name found. Downloading as a new copy: $NAME ($COUNTER).$EXT"
+    fi
+fi
+
+if [[ "$choice" =~ ^[mM]$ ]]; then
+    echo "Downloading music (Opus format)..."
+    yt-dlp "${args[@]}" \
+        -x --audio-format opus --audio-quality 0 \
+        --embed-metadata --embed-thumbnail \
+        "${out_opts[@]}" \
+        "$URL" 2>> "$LOG_FILE"
+    
+    EXIT_CODE=$?
+else
+    echo "Downloading video (MP4 format)..."
+    yt-dlp "${args[@]}" \
+        -f "bestvideo[height<=2160]+bestaudio/best[height<=2160]" \
+        --merge-output-format mp4 \
+        --embed-metadata --embed-thumbnail \
+        "${out_opts[@]}" \
+        "$URL" 2>> "$LOG_FILE"
+        
+    EXIT_CODE=$?
+fi
+
+# Handle status reporting
+if [ "$EXIT_CODE" -eq 0 ]; then
+    echo "Completed! File location: $OUT_DIR"
+else
+    echo "Error: Download failed or interrupted!"
+    if [ "$IS_PLAYLIST" = true ]; then
+        echo "Info: Playlist archive preserved. Run again to resume from where it left off."
+    fi
+    echo "See error log for details: $LOG_FILE"
+    exit 1
+fi
