@@ -41,26 +41,50 @@ if [[ ! "$choice" =~ ^[mMyYvV]$ ]]; then
     exit 1
 fi
 
+# Resolve XDG directories with fallbacks
+get_xdg_dir() {
+    local type="$1"
+    local default_fallback="$2"
+    local dir=""
+    if command -v xdg-user-dir >/dev/null 2>&1; then
+        dir=$(xdg-user-dir "$type")
+    fi
+    if [ -z "$dir" ]; then
+        dir="$default_fallback"
+    fi
+    echo "$dir"
+}
+
+MUSIC_DIR=$(get_xdg_dir MUSIC "$HOME/Music")
+VIDEOS_DIR=$(get_xdg_dir VIDEOS "$HOME/Videos")
+DOCUMENTS_DIR=$(get_xdg_dir DOCUMENTS "$HOME/Documents")
+CACHE_DIR="${XDG_CACHE_HOME:-$HOME/.cache}"
+CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}"
+
 # Set up target directory and extension based on format choice
 if [[ "$choice" =~ ^[mM]$ ]]; then
-    OUT_DIR="/home/baran/Music"
+    OUT_DIR="$MUSIC_DIR"
     EXT="opus"
 else
-    OUT_DIR="/home/baran/Videos/Youtube"
+    OUT_DIR="$VIDEOS_DIR/Youtube"
     EXT="mp4"
 fi
 mkdir -p "$OUT_DIR"
 
-# Hardcoded cookies file
-COOKIES="/home/baran/Documents/www.youtube.com_cookies.txt"
+# Find cookies file
+COOKIES="$DOCUMENTS_DIR/www.youtube.com_cookies.txt"
+if [ ! -f "$COOKIES" ]; then
+    COOKIES="$CONFIG_DIR/yt-dlp/cookies.txt"
+fi
+
 if [ -f "$COOKIES" ]; then
-    echo "Cookies file loaded: www.youtube.com_cookies.txt"
+    echo "Cookies file loaded: $(basename "$COOKIES")"
 else
     echo "Warning: Cookies file not found!"
 fi
 
 # Set up error log file
-LOG_FILE="/home/baran/.cache/ytdlp_download_error.log"
+LOG_FILE="$CACHE_DIR/ytdlp_download_error.log"
 mkdir -p "$(dirname "$LOG_FILE")"
 
 # Set up standard Chrome User Agent (updated to 125)
@@ -97,7 +121,7 @@ args+=("${USER_ARGS[@]}")
 ARCHIVE_FILE=""
 if [ "$IS_PLAYLIST" = true ]; then
     URL_HASH=$(printf "%s" "$URL" | md5sum | cut -d' ' -f1)
-    ARCHIVE_FILE="/home/baran/.cache/yt-dlp-archive-${URL_HASH}.txt"
+    ARCHIVE_FILE="$CACHE_DIR/yt-dlp-archive-${URL_HASH}.txt"
     mkdir -p "$(dirname "$ARCHIVE_FILE")"
     args+=("--download-archive" "$ARCHIVE_FILE")
     echo "Playlist detected. Download archive active: $ARCHIVE_FILE"
