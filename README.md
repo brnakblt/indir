@@ -10,7 +10,7 @@ A robust, feature-rich Bash wrapper script around `yt-dlp` for downloading YouTu
 - **Playlist Resumption:** Automatically tracks downloaded playlist items using a persistent archive file, allowing seamless resumption if interrupted.
 - **Anti-Blocking Measures:** Configured with a standard Chrome User Agent, random sleep intervals (10-25s), retries, and rate limits to mimic human behavior and avoid Google's rate limits.
 - **Metadata & Thumbnails:** Automatic embedding of metadata and thumbnails (using `mutagen` for tag injection).
-- **Cookies Integration:** Auto-detects Netscape-format cookies from a configured local file for smooth downloads.
+- **Cookies Integration:** Auto-detects Netscape-format cookies from XDG standard locations.
 
 ---
 
@@ -59,8 +59,30 @@ uv tool install --with mutagen --upgrade yt-dlp
    cp indir ~/.local/bin/
    ```
 
-4. Configure your YouTube cookies file:
-   The script loads cookies from `/home/baran/Documents/www.youtube.com_cookies.txt`. Ensure your Netscape cookies file is exported there.
+---
+
+## Configuring YouTube Cookies
+
+YouTube often blocks anonymous video downloads. To download videos reliably, you need to provide your authentication cookies to `yt-dlp`.
+
+### 1. Exporting Cookies from Browser
+To export your cookies safely, we recommend using the **Get cookies.txt LOCALLY** browser extension:
+- **Chrome / Chromium / Brave:** Install [Get cookies.txt LOCALLY](https://chromewebstore.google.com/detail/get-cookiestxt-locally/ccjhcggjempadhahahkjoecmblmjmcfo) from the Chrome Web Store.
+- **Firefox:** Install [Get cookies.txt LOCALLY](https://addons.mozilla.org/en-US/firefox/addon/get-cookies-txt-locally/) from Firefox Browser Add-ons.
+
+**Steps to export:**
+1. Open your browser, navigate to [youtube.com](https://www.youtube.com) and ensure you are logged into your account.
+2. Click the **Get cookies.txt LOCALLY** extension icon in your browser toolbar.
+3. Click **Export** (specifically choosing to download cookies for `youtube.com` or `www.youtube.com`).
+4. Save the downloaded Netscape-formatted file as:
+   - `www.youtube.com_cookies.txt` (or rename it accordingly).
+
+### 2. Where to Place the Cookies File
+The script dynamically looks for the cookies file in the following XDG-compliant locations (in order):
+1. `~/Documents/www.youtube.com_cookies.txt` (or your systems XDG Documents directory)
+2. `~/.config/yt-dlp/cookies.txt` (or your systems XDG Config directory)
+
+Simply move your exported cookies file to one of these locations.
 
 ---
 
